@@ -4,6 +4,9 @@ import android.Manifest;
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothProfile;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -17,13 +20,17 @@ import androidx.annotation.RequiresApi;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.logging.Handler;
 
 public class BluetoothConnection {
     int mINODES_NUM = 8;
     BluetoothAdapter mbluetoothAdapter;
-//    Context mcontext;
+    Common mcommon = new Common();
     public ArrayList<BluetoothDevice> mbluetoothDevices = new ArrayList<>();
+    public ArrayList<BluetoothGatt> mbluetoothGattDevices = new ArrayList<>();
 
     public ArrayList<String> mINodesAddresses = new ArrayList<String>() {{
         add("D0:F0:18:44:0C:4B"); // iNode-440D74, p0
@@ -35,6 +42,9 @@ public class BluetoothConnection {
 
     public BluetoothConnection(Context context) {
         mbluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+//        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED);
+//        context.registerReceiver(mBroadcastReceiver4, filter);
+
         enableBluetooth(context);
     }
 
@@ -46,7 +56,7 @@ public class BluetoothConnection {
             if (action.equals(mbluetoothAdapter.ACTION_STATE_CHANGED)) {
                 final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, mbluetoothAdapter.ERROR);
 
-                switch(state){
+            switch(state){
                     case BluetoothAdapter.STATE_OFF:
 //                        Log.d(TAG, "onReceive: STATE OFF");
                         break;
@@ -118,13 +128,13 @@ public class BluetoothConnection {
                 String deviceAddress = device.getAddress().toUpperCase();
                 int index = mINodesAddresses.indexOf(deviceAddress);
                 if (index != -1) {
-                    mbluetoothDevices.add(device);
-                    Integer deviceRSSI = Integer.valueOf(intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE));
-                    mRSSI[index] = deviceRSSI;
+                    if (!mbluetoothDevices.contains(device)) {
+                        mbluetoothDevices.add(device);
+//                         Integer deviceRSSI = Integer.valueOf(intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE));
+//                         mRSSI[index] = deviceRSSI;
+                        mbluetoothGattDevices.add(device.connectGatt(context, true, mGattCallback));
+                    }
                 }
-                //mbluetoothDevicesAndRSSI.put(device, deviceRSSI);
-                //mdeviceListAdapter = new DeviceListAdapter(context, R.layout.activity_device_list_adapter, mbluetoothDevices, mbluetoothDevicesAndRSSI);
-                //mlistViewNewDevices.setAdapter(mdeviceListAdapter);
             }
         }
     };
@@ -132,11 +142,10 @@ public class BluetoothConnection {
     public void enableBluetooth(Context context) {
         if(mbluetoothAdapter == null){
             msg(context,"Urządzenie nie wspiera technologii Bluetooth.");
-            Intent intent = new Intent (context, MainActivity.class);
-            context.startActivity(intent);
+            mcommon.goToMainActivity(context);
         }
-        if(!mbluetoothAdapter.isEnabled()){
-            Intent enableBluetoothIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+        if(!mbluetoothAdapter.isEnabled()) {
+            Intent enableBluetoothIntent = new  Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
             context.startActivity(enableBluetoothIntent);
 
             IntentFilter bluetoothIntent = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
@@ -153,13 +162,51 @@ public class BluetoothConnection {
         if(mbluetoothAdapter.isEnabled()){
             mbluetoothAdapter.disable();
 
-            IntentFilter BTIntent = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
-            context.registerReceiver(mBroadcastReceiver1, BTIntent);
+            IntentFilter bluetoothIntent = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
+            context.registerReceiver(mBroadcastReceiver1, bluetoothIntent);
         }
     }
 
     @RequiresApi(api = Build.VERSION_CODES.M)
-    public void checkBluetoothConnection(Context context) {
+    public Set<BluetoothDevice> getPairedINodeDevices(Context context) {
+        Set<BluetoothDevice> pairedINodeDevices = null;
+        Set<BluetoothDevice> pairedDevices = mbluetoothAdapter.getBondedDevices();
+        for(BluetoothDevice bt : pairedDevices) {
+            if (mINodesAddresses.contains(bt.getAddress()))
+                pairedINodeDevices.add(bt);
+        }
+        return pairedINodeDevices;
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    public void getINodesRSSI(Context context) {
+        for (BluetoothDevice inode : mbluetoothDevices) {
+
+        }
+    }
+
+    private final BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
+        @Override
+        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+            super.onConnectionStateChange(gatt, status, newState);
+            gatt.readRemoteRssi();
+        }
+
+        @Override
+        public void onReadRemoteRssi(BluetoothGatt gatt, int rssi, int status) {
+            super.onReadRemoteRssi(gatt, rssi, status);
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                BluetoothDevice inode = gatt.getDevice();
+                String deviceAddress = inode.getAddress().toUpperCase();
+                Log.d("OnRead remote RSSI:", deviceAddress);
+                int index = mINodesAddresses.indexOf(deviceAddress);
+                mRSSI[index] = rssi;
+            }
+        }
+    };
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    public void startBluetoothConnection(Context context) {
         if(mbluetoothAdapter.isDiscovering()) {
             mbluetoothAdapter.cancelDiscovery();
         }
@@ -174,6 +221,7 @@ public class BluetoothConnection {
     public void unregisterReceiver(Context context) {
         context.unregisterReceiver(mBroadcastReceiver1);
         context.unregisterReceiver(mBroadcastReceiver2);
+        context.unregisterReceiver(mBroadcastReceiver3);
     }
 
     public void msg(Context context, String s) {
