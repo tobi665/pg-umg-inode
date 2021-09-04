@@ -6,14 +6,20 @@ import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanResult;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.util.Log;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.Toast;
 
 import androidx.annotation.RequiresApi;
@@ -26,8 +32,11 @@ import java.util.Set;
 import java.util.logging.Handler;
 
 public class BluetoothConnection {
-    int mINODES_NUM = 8;
+    final String TAG = "BluetoothConnection";
+
     BluetoothAdapter mbluetoothAdapter;
+    BluetoothLeScanner mbluetoothLeScanner;
+
     Common mcommon = new Common();
     public ArrayList<BluetoothDevice> mbluetoothDevices = new ArrayList<>();
     public ArrayList<BluetoothGatt> mbluetoothGattDevices = new ArrayList<>();
@@ -36,110 +45,56 @@ public class BluetoothConnection {
         add("D0:F0:18:44:0C:4B"); // iNode-440D74, p0
         add("D0:F0:18:44:0D:73"); // iNode-440C4B, p1
         add("D0:F0:18:44:0D:74"); // iNode-440D73, p2
+        add("D0:F0:18:44:0C:4C"); // iNode-440D74, p4
+        add("D0:F0:18:44:0D:6E"); // iNode-440D74, p5
+        add("D0:F0:18:44:0D:6F"); // iNode-440D74, p6
     }};
 
-    public int[] mRSSI = new int[mINODES_NUM];
+    public int[] mRSSI = new int[mcommon.mINODES_NUM];
 
     public BluetoothConnection(Context context) {
-        mbluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-//        IntentFilter filter = new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED);
-//        context.registerReceiver(mBroadcastReceiver4, filter);
-
-        enableBluetooth(context);
+        checkIfBleSupported(context);
+        initializeBluetoothManager(context);
+        checkIfBluetoothEnabled(context);
     }
 
-    // Create a BroadcastReceiver for ACTION_FOUND
-    public final BroadcastReceiver mBroadcastReceiver1 = new BroadcastReceiver() {
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            // When discovery finds a device
-            if (action.equals(mbluetoothAdapter.ACTION_STATE_CHANGED)) {
-                final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, mbluetoothAdapter.ERROR);
-
-            switch(state){
-                    case BluetoothAdapter.STATE_OFF:
-//                        Log.d(TAG, "onReceive: STATE OFF");
-                        break;
-                    case BluetoothAdapter.STATE_TURNING_OFF:
-//                        Log.d(TAG, "mBroadcastReceiver1: STATE TURNING OFF");
-                        break;
-                    case BluetoothAdapter.STATE_ON:
-//                        Log.d(TAG, "mBroadcastReceiver1: STATE ON");
-                        break;
-                    case BluetoothAdapter.STATE_TURNING_ON:
-//                        Log.d(TAG, "mBroadcastReceiver1: STATE TURNING ON");
-                        break;
-                }
-            }
-        }
-    };
-
-    /**
-     * Broadcast Receiver for changes made to bluetooth states such as:
-     * 1) Discoverability mode on/off or expire.
-     */
-    public final BroadcastReceiver mBroadcastReceiver2 = new BroadcastReceiver() {
-
-        @SuppressLint("LongLogTag")
+    public ScanCallback mLeScanCallback = new ScanCallback() {
         @Override
-        public void onReceive(Context context, Intent intent) {
-            final String action = intent.getAction();
+        public void onScanResult(int callbackType, ScanResult result) {
+            super.onScanResult(callbackType, result);
+            if (mbluetoothDevices.size() >= mcommon.mINODES_NUM) return;
 
-            if (action.equals(BluetoothAdapter.ACTION_SCAN_MODE_CHANGED)) {
-
-                int mode = intent.getIntExtra(BluetoothAdapter.EXTRA_SCAN_MODE, BluetoothAdapter.ERROR);
-
-                switch (mode) {
-                    //Device is in Discoverable Mode
-                    case BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE:
-//                        Log.d(TAG, "mBroadcastReceiver2: Discoverability Enabled.");
-                        break;
-                    //Device not in discoverable mode
-                    case BluetoothAdapter.SCAN_MODE_CONNECTABLE:
-//                        Log.d(TAG, "mBroadcastReceiver2: Discoverability Disabled. Able to receive connections.");
-                        break;
-                    case BluetoothAdapter.SCAN_MODE_NONE:
-//                        Log.d(TAG, "mBroadcastReceiver2: Discoverability Disabled. Not able to receive connections.");
-                        break;
-                    case BluetoothAdapter.STATE_CONNECTING:
-//                        Log.d(TAG, "mBroadcastReceiver2: Connecting....");
-                        break;
-                    case BluetoothAdapter.STATE_CONNECTED:
-//                        Log.d(TAG, "mBroadcastReceiver2: Connected.");
-                        break;
-                }
-
-            }
-        }
-    };
-
-    /**
-     * Broadcast Receiver for listing devices that are not yet paired
-     * -Executed by buttonCheckBluetoothConnection_OnClick() method.
-     */
-    public BroadcastReceiver mBroadcastReceiver3 = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            final String action = intent.getAction();
-
-            if (action.equals(BluetoothDevice.ACTION_FOUND)){
-                BluetoothDevice device = intent.getParcelableExtra (BluetoothDevice.EXTRA_DEVICE);
-
-                String deviceAddress = device.getAddress().toUpperCase();
-                int index = mINodesAddresses.indexOf(deviceAddress);
-                if (index != -1) {
-                    if (!mbluetoothDevices.contains(device)) {
-                        mbluetoothDevices.add(device);
-//                         Integer deviceRSSI = Integer.valueOf(intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE));
-//                         mRSSI[index] = deviceRSSI;
-                        mbluetoothGattDevices.add(device.connectGatt(context, true, mGattCallback));
-                    }
+            Log.d(TAG, "onScanResult: " + result.toString());
+            BluetoothDevice bluetoothDevice = result.getDevice();
+            String deviceAddress = bluetoothDevice.getAddress().toUpperCase();
+            int index = mINodesAddresses.indexOf(deviceAddress);
+            if (index != -1) {
+                if (!mbluetoothDevices.contains(bluetoothDevice)) {
+                    mbluetoothDevices.add(bluetoothDevice);
                 }
             }
         }
-    };
 
-    public void enableBluetooth(Context context) {
+            @Override
+            public void onBatchScanResults(List<ScanResult> results) {
+                super.onBatchScanResults(results);
+                Log.d(TAG, "onBatchScanResults: " + results.toString());
+            }
+
+            @Override
+            public void onScanFailed(int errorCode) {
+                super.onScanFailed(errorCode);
+                Log.d(TAG, "onScanFailed: " + errorCode);
+            }
+        };
+
+    private void initializeBluetoothManager(Context context) {
+        final BluetoothManager bluetoothManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
+        mbluetoothAdapter = bluetoothManager.getAdapter();
+        mbluetoothLeScanner = mbluetoothAdapter.getBluetoothLeScanner();
+    }
+
+    public void checkIfBluetoothEnabled(Context context) {
         if(mbluetoothAdapter == null){
             msg(context,"Urządzenie nie wspiera technologii Bluetooth.");
             mcommon.goToMainActivity(context);
@@ -147,9 +102,13 @@ public class BluetoothConnection {
         if(!mbluetoothAdapter.isEnabled()) {
             Intent enableBluetoothIntent = new  Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
             context.startActivity(enableBluetoothIntent);
+        }
+    }
 
-            IntentFilter bluetoothIntent = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
-            context.registerReceiver(mBroadcastReceiver1, bluetoothIntent);
+    private void checkIfBleSupported(Context context) {
+        if (!context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH_LE)) {
+            msg(context,"Urządzenie nie wspiera technologii BluetoothLE.");
+            mcommon.goToMainActivity(context);
         }
     }
 
@@ -161,31 +120,25 @@ public class BluetoothConnection {
         }
         if(mbluetoothAdapter.isEnabled()){
             mbluetoothAdapter.disable();
-
-            IntentFilter bluetoothIntent = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
-            context.registerReceiver(mBroadcastReceiver1, bluetoothIntent);
         }
     }
 
-    @RequiresApi(api = Build.VERSION_CODES.M)
-    public Set<BluetoothDevice> getPairedINodeDevices(Context context) {
-        Set<BluetoothDevice> pairedINodeDevices = null;
-        Set<BluetoothDevice> pairedDevices = mbluetoothAdapter.getBondedDevices();
-        for(BluetoothDevice bt : pairedDevices) {
-            if (mINodesAddresses.contains(bt.getAddress()))
-                pairedINodeDevices.add(bt);
-        }
-        return pairedINodeDevices;
-    }
-
-    @RequiresApi(api = Build.VERSION_CODES.M)
-    public void getINodesRSSI(Context context) {
-        for (BluetoothDevice inode : mbluetoothDevices) {
-
+    public void connectDevicesToGatt(Context context) {
+        if (mbluetoothDevices != null) {
+            for (BluetoothDevice bluetoothDevice: mbluetoothDevices) {
+                mbluetoothGattDevices.add(bluetoothDevice.connectGatt(context, false, mGattCallback));
+            }
         }
     }
 
     private final BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
+        @Override
+        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+            super.onServicesDiscovered(gatt, status);
+            Log.d(TAG, "onServicesDiscovered: " + gatt.toString());
+            Log.d(TAG, "onServicesDiscovered: " + status);
+        }
+
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
             super.onConnectionStateChange(gatt, status, newState);
@@ -195,34 +148,17 @@ public class BluetoothConnection {
         @Override
         public void onReadRemoteRssi(BluetoothGatt gatt, int rssi, int status) {
             super.onReadRemoteRssi(gatt, rssi, status);
+            Log.d("OnRead remote RSSI:", "before if");
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 BluetoothDevice inode = gatt.getDevice();
                 String deviceAddress = inode.getAddress().toUpperCase();
                 Log.d("OnRead remote RSSI:", deviceAddress);
+                Log.d("OnRead remote RSSI:", String.valueOf(rssi));
                 int index = mINodesAddresses.indexOf(deviceAddress);
                 mRSSI[index] = rssi;
             }
         }
     };
-
-    @RequiresApi(api = Build.VERSION_CODES.M)
-    public void startBluetoothConnection(Context context) {
-        if(mbluetoothAdapter.isDiscovering()) {
-            mbluetoothAdapter.cancelDiscovery();
-        }
-        //check BT permissions in manifest
-//        checkBluetoothPermissions();
-
-        mbluetoothAdapter.startDiscovery();
-        IntentFilter discoverDevicesIntent = new IntentFilter(BluetoothDevice.ACTION_FOUND);
-        context.registerReceiver(mBroadcastReceiver3, discoverDevicesIntent);
-    }
-
-    public void unregisterReceiver(Context context) {
-        context.unregisterReceiver(mBroadcastReceiver1);
-        context.unregisterReceiver(mBroadcastReceiver2);
-        context.unregisterReceiver(mBroadcastReceiver3);
-    }
 
     public void msg(Context context, String s) {
         Toast.makeText(context, s, Toast.LENGTH_LONG).show();

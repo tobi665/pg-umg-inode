@@ -39,12 +39,13 @@ import static java.lang.Thread.sleep;
 
 @RequiresApi(api = Build.VERSION_CODES.M)
 public class PaintingActivity extends AppCompatActivity {
+    private static final long SCAN_PERIOD = 10 * 1000;
+
     Button mbuttonBack;
     ImageView mimageViewPainting;
     BluetoothConnection mbluetoothConnection;
     Common mcommon = new Common();
     Handler mhandler;
-    Timer rssiTimer = new Timer();
 
     public ArrayList<Integer> mpaintings = new ArrayList<Integer>() {
         {
@@ -71,97 +72,73 @@ public class PaintingActivity extends AppCompatActivity {
         mbuttonBack = (Button)findViewById(R.id.button_back);
         mimageViewPainting = (ImageView) findViewById(R.id.imageView_painting);
 
-//        mbluetoothConnection.startBluetoothConnection(this);
-//        Set<BluetoothDevice> pairedINodeDevices = mbluetoothConnection.getPairedINodeDevices(this);
-//        mbluetoothConnection.getINodesRSSI(this);
-
         mhandler = new Handler();
-        startRepeatingTask();
+
+        scanLeDevice(this, true);
 
         mbuttonBack.setOnClickListener(v -> {
             mcommon.goToMainActivity(this);
         });
     }
 
-//    Runnable mStatusChecker = new Runnable() {
-//        @Override
-//        public void run() {
-//            try {
-//                setPainting();
-//                if (mbluetoothConnection.mbluetoothGattDevices != null) {
-//                    for (BluetoothGatt inode : mbluetoothConnection.mbluetoothGattDevices) {
-//                        inode.readRemoteRssi();
-//                    }
-//                }
-//            } finally {
-//                // 100% guarantee that this always happens, even if
-//                // your update method throws an exception
-//                mhandler.postDelayed(mStatusChecker, minterval);
-//            }
-//        }
-//    };
+    private void scanLeDevice(Context context, final boolean enable) {
+        if (enable) {
+            mhandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                                mbluetoothConnection.mbluetoothLeScanner.stopScan(mbluetoothConnection.mLeScanCallback);
+                                Log.d("DONE BLE", String.valueOf(mbluetoothConnection.mbluetoothDevices.size()));
+                            if (mbluetoothConnection.mbluetoothDevices.size() >= mcommon.mINODES_NUM &&
+                                    mbluetoothConnection.mbluetoothGattDevices.size() < mcommon.mINODES_NUM) {
+                                    mbluetoothConnection.connectDevicesToGatt(context);
+                                    Log.d("DONE GATT", String.valueOf(mbluetoothConnection.mbluetoothGattDevices.size()));
+                            }
+                            if (mbluetoothConnection.mbluetoothGattDevices.size() >= mcommon.mINODES_NUM) {
+                                startRepeatingTask();
+                            } else {
+                                scanLeDevice(context, true);
+                            }
+                        }
+            }, SCAN_PERIOD);
+        }
+        mbluetoothConnection.mbluetoothLeScanner.startScan(mbluetoothConnection.mLeScanCallback);
+    }
+
+    void startRepeatingTask() {
+        mStatusChecker.run();
+    }
+    void stopRepeatingTask() {
+        mhandler.removeCallbacks(mStatusChecker);
+    }
 
     Runnable mStatusChecker = new Runnable() {
         @Override
         public void run() {
             try {
-                setPainting();
                 if (mbluetoothConnection.mbluetoothGattDevices != null && mbluetoothConnection.mbluetoothDevices.size() >=3) {
                     for (BluetoothGatt inode : mbluetoothConnection.mbluetoothGattDevices) {
                         inode.readRemoteRssi();
                     }
                 }
+                setPainting();
             } finally {
                 // 100% guarantee that this always happens, even if
                 // your update method throws an exception
-                mhandler.postDelayed(mStatusChecker, 2000);
+                mhandler.postDelayed(mStatusChecker, 1000);
             }
         }
     };
 
-//    TimerTask task = new TimerTask()
-//    {
-//        @Override
-//        public void run()
-//        {
-//            setPainting();
-//            if (mbluetoothConnection.mbluetoothGattDevices != null && mbluetoothConnection.mbluetoothDevices.size() >=3) {
-//                for (BluetoothGatt inode : mbluetoothConnection.mbluetoothGattDevices) {
-////                    inode.readRemoteRssi();
-//                    inode.disconnect();
-//                    inode.connect();
-////                    inode.disconnect();
-//                }
-//            }
-//        }
-//    };
-
-    void startRepeatingTask() {
-        mStatusChecker.run();
-    }
-
-    void stopRepeatingTask() {
-        mhandler.removeCallbacks(mStatusChecker);
-    }
-
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        mbluetoothConnection.unregisterReceiver(this);
         stopRepeatingTask();
 //        mbluetoothAdapter.cancelDiscovery();
     }
 
     @RequiresApi(api = Build.VERSION_CODES.M)
     public void setPainting() {
-        if (mbluetoothConnection.mbluetoothDevices.size() < 3) {
-            mbluetoothConnection.startBluetoothConnection(this);
-//        } else {
-//            mbluetoothConnection.mbluetoothAdapter.cancelDiscovery();
-//            for (BluetoothGatt inode : mbluetoothConnection.mbluetoothGattDevices) {
-//                inode.readRemoteRssi();
-//            }
-        }
+        if (mbluetoothConnection.mRSSI == null) return;
 
         int maxRSSI = 0;
         int maxRSSIIndex = -1;
