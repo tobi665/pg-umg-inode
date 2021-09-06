@@ -12,9 +12,11 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.res.Resources;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
@@ -39,13 +41,20 @@ import static java.lang.Thread.sleep;
 
 @RequiresApi(api = Build.VERSION_CODES.M)
 public class PaintingActivity extends AppCompatActivity {
-    private static final long SCAN_PERIOD = 10 * 1000;
 
+    private static final long SCAN_PERIOD = 10 * 1000;
+    private static final long TIME_BETWEEN_READINGS_UPDATES = 185;
+
+    //Necessary to make bluetooth readings work properly! Do Not Touch!
+    private static final long HARDWARE_TIME_BETWEEN_READINGS = 5;
+
+    boolean mstartedRepeatingTask = false;
     Button mbuttonBack;
     ImageView mimageViewPainting;
     BluetoothConnection mbluetoothConnection;
     Common mcommon = new Common();
     Handler mhandler;
+    Resources resources;
 
     public ArrayList<Integer> mpaintings = new ArrayList<Integer>() {
         {
@@ -69,62 +78,68 @@ public class PaintingActivity extends AppCompatActivity {
         mbluetoothConnection = new BluetoothConnection(this);
         checkBluetoothPermissions();
 
-        mbuttonBack = (Button)findViewById(R.id.button_back);
+        mbuttonBack = (Button) findViewById(R.id.button_back);
         mimageViewPainting = (ImageView) findViewById(R.id.imageView_painting);
 
+        resources = getResources();
         mhandler = new Handler();
 
-        scanLeDevice(this, true);
+        scanLeDevice(this);
 
         mbuttonBack.setOnClickListener(v -> {
             mcommon.goToMainActivity(this);
         });
     }
 
-    private void scanLeDevice(Context context, final boolean enable) {
-        if (enable) {
-            mhandler.postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                                mbluetoothConnection.mbluetoothLeScanner.stopScan(mbluetoothConnection.mLeScanCallback);
-                                Log.d("DONE BLE", String.valueOf(mbluetoothConnection.mbluetoothDevices.size()));
-                            if (mbluetoothConnection.mbluetoothDevices.size() >= mcommon.mINODES_NUM &&
-                                    mbluetoothConnection.mbluetoothGattDevices.size() < mcommon.mINODES_NUM) {
-                                    mbluetoothConnection.connectDevicesToGatt(context);
-                                    Log.d("DONE GATT", String.valueOf(mbluetoothConnection.mbluetoothGattDevices.size()));
-                            }
-                            if (mbluetoothConnection.mbluetoothGattDevices.size() >= mcommon.mINODES_NUM) {
-                                startRepeatingTask();
-                            } else {
-                                scanLeDevice(context, true);
-                            }
-                        }
+    private void scanLeDevice(Context context) {
+        if (!mstartedRepeatingTask) {
+            mhandler.postDelayed(() -> {
+                mbluetoothConnection.mbluetoothLeScanner.stopScan(mbluetoothConnection.mLeScanCallback);
+                Log.d("DONE BLE", String.valueOf(mbluetoothConnection.mbluetoothDevices.size()));
+                if (mbluetoothConnection.mbluetoothDevices.size() >= mcommon.NUMBER_OF_INODE_DEVICES &&
+                        mbluetoothConnection.mbluetoothGattDevices.size() < mcommon.NUMBER_OF_INODE_DEVICES)
+                {
+                    mbluetoothConnection.connectDevicesToGatt(context);
+                    Log.d("DONE GATT", String.valueOf(mbluetoothConnection.mbluetoothGattDevices.size()));
+                }
+                if (mbluetoothConnection.mbluetoothGattDevices.size() == mcommon.NUMBER_OF_INODE_DEVICES)
+                {
+                    startRepeatingTask();
+                }
+                else
+                {
+                    scanLeDevice(context);
+                }
             }, SCAN_PERIOD);
         }
         mbluetoothConnection.mbluetoothLeScanner.startScan(mbluetoothConnection.mLeScanCallback);
     }
 
     void startRepeatingTask() {
-        mStatusChecker.run();
-    }
-    void stopRepeatingTask() {
-        mhandler.removeCallbacks(mStatusChecker);
+        mstartedRepeatingTask = true;
+        while(true) //TODO: create a flag to stop a thread
+        {
+            SystemClock.sleep(TIME_BETWEEN_READINGS_UPDATES);
+            Thread get_inode_rssi = new Thread(mStatusChecker);
+            get_inode_rssi.start();
+            try {
+                get_inode_rssi.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            setPainting();
+        }
     }
 
     Runnable mStatusChecker = new Runnable() {
         @Override
         public void run() {
-            try {
-                if (mbluetoothConnection.mbluetoothGattDevices != null && mbluetoothConnection.mbluetoothDevices.size() >=3) {
-                    for (BluetoothGatt inode : mbluetoothConnection.mbluetoothGattDevices) {
-                        inode.readRemoteRssi();
-                    }
+            for (BluetoothGatt inode : mbluetoothConnection.mbluetoothGattDevices) {
+                if (inode.readRemoteRssi() == false)
+                {
+                    Log.d("RUNNABLE", "ReadRemoteRssi() returns false");
                 }
-                setPainting();
-            } finally {
-                // 100% guarantee that this always happens, even if
-                // your update method throws an exception
-                mhandler.postDelayed(mStatusChecker, 1000);
+                SystemClock.sleep(HARDWARE_TIME_BETWEEN_READINGS);
             }
         }
     };
@@ -132,7 +147,6 @@ public class PaintingActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        stopRepeatingTask();
 //        mbluetoothAdapter.cancelDiscovery();
     }
 
@@ -148,8 +162,7 @@ public class PaintingActivity extends AppCompatActivity {
                 if (maxRSSI == 0) {
                     maxRSSI = RSSI;
                     maxRSSIIndex = i;
-                }
-                else {
+                } else {
                     if (RSSI > maxRSSI) {
                         maxRSSI = RSSI;
                         maxRSSIIndex = i;
@@ -159,6 +172,8 @@ public class PaintingActivity extends AppCompatActivity {
         }
         if (maxRSSI != 0) {
             mimageViewPainting.setImageResource(mpaintings.get(maxRSSIIndex));
+            Log.d("setImageView", String.valueOf(maxRSSIIndex));
+//            SystemClock.sleep(1000);
         }
     }
 

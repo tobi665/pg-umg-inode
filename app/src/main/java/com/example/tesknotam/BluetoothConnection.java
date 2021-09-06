@@ -41,16 +41,7 @@ public class BluetoothConnection {
     public ArrayList<BluetoothDevice> mbluetoothDevices = new ArrayList<>();
     public ArrayList<BluetoothGatt> mbluetoothGattDevices = new ArrayList<>();
 
-    public ArrayList<String> mINodesAddresses = new ArrayList<String>() {{
-        add("D0:F0:18:44:0C:4B"); // iNode-440D74, p0
-        add("D0:F0:18:44:0D:73"); // iNode-440C4B, p1
-        add("D0:F0:18:44:0D:74"); // iNode-440D73, p2
-        add("D0:F0:18:44:0C:4C"); // iNode-440D74, p4
-        add("D0:F0:18:44:0D:6E"); // iNode-440D74, p5
-        add("D0:F0:18:44:0D:6F"); // iNode-440D74, p6
-    }};
-
-    public int[] mRSSI = new int[mcommon.mINODES_NUM];
+    public int[] mRSSI = new int[mcommon.NUMBER_OF_INODE_DEVICES];
 
     public BluetoothConnection(Context context) {
         checkIfBleSupported(context);
@@ -62,12 +53,12 @@ public class BluetoothConnection {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
             super.onScanResult(callbackType, result);
-            if (mbluetoothDevices.size() >= mcommon.mINODES_NUM) return;
+            if (mbluetoothDevices.size() >= mcommon.NUMBER_OF_INODE_DEVICES) return;
 
             Log.d(TAG, "onScanResult: " + result.toString());
             BluetoothDevice bluetoothDevice = result.getDevice();
             String deviceAddress = bluetoothDevice.getAddress().toUpperCase();
-            int index = mINodesAddresses.indexOf(deviceAddress);
+            int index = mcommon.LIST_OF_INODE_ADDRESSES.indexOf(deviceAddress);
             if (index != -1) {
                 if (!mbluetoothDevices.contains(bluetoothDevice)) {
                     mbluetoothDevices.add(bluetoothDevice);
@@ -75,18 +66,18 @@ public class BluetoothConnection {
             }
         }
 
-            @Override
-            public void onBatchScanResults(List<ScanResult> results) {
-                super.onBatchScanResults(results);
-                Log.d(TAG, "onBatchScanResults: " + results.toString());
-            }
+        @Override
+        public void onBatchScanResults(List<ScanResult> results) {
+            super.onBatchScanResults(results);
+            Log.d(TAG, "onBatchScanResults: " + results.toString());
+        }
 
-            @Override
-            public void onScanFailed(int errorCode) {
-                super.onScanFailed(errorCode);
-                Log.d(TAG, "onScanFailed: " + errorCode);
-            }
-        };
+        @Override
+        public void onScanFailed(int errorCode) {
+            super.onScanFailed(errorCode);
+            Log.d(TAG, "onScanFailed: " + errorCode);
+        }
+    };
 
     private void initializeBluetoothManager(Context context) {
         final BluetoothManager bluetoothManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
@@ -154,7 +145,7 @@ public class BluetoothConnection {
                 String deviceAddress = inode.getAddress().toUpperCase();
                 Log.d("OnRead remote RSSI:", deviceAddress);
                 Log.d("OnRead remote RSSI:", String.valueOf(rssi));
-                int index = mINodesAddresses.indexOf(deviceAddress);
+                int index = mcommon.LIST_OF_INODE_ADDRESSES.indexOf(deviceAddress);
                 mRSSI[index] = rssi;
             }
         }
