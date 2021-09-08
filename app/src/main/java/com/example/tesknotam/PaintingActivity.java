@@ -5,15 +5,11 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.Manifest;
-import android.bluetooth.BluetoothAdapter;
-import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.res.Resources;
 import android.location.LocationManager;
+import android.media.MediaPlayer;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -21,40 +17,30 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
-import android.widget.ListView;
-import android.widget.TextView;
-import android.widget.Toast;
 
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 import android.os.Handler;
-
-import java.util.Set;
-import java.util.Timer;
-import java.util.TimerTask;
-import java.util.logging.LogRecord;
-
-import static java.lang.Thread.sleep;
 
 @RequiresApi(api = Build.VERSION_CODES.M)
 public class PaintingActivity extends AppCompatActivity {
 
     private static final long SCAN_PERIOD = 10 * 1000;
     private static final long TIME_BETWEEN_READINGS_UPDATES = 185;
-
     //Necessary to make bluetooth readings work properly! Do Not Touch!
     private static final long HARDWARE_TIME_BETWEEN_READINGS = 5;
+
+    private static final int mINDEX_SILENCE_SOUND = 7;
+    private static final int mMAX_VOLUME = 60;
 
     boolean mstartedRepeatingTask = false;
     Button mbuttonBack;
     ImageView mimageViewPainting;
+    MediaPlayer mmediaPlayer;
     BluetoothConnection mbluetoothConnection;
     Common mcommon = new Common();
     Handler mhandler;
-    Resources resources;
+    int currentIndex = -1;
+
 
     public ArrayList<Integer> mpaintings = new ArrayList<Integer>() {
         {
@@ -66,6 +52,18 @@ public class PaintingActivity extends AppCompatActivity {
             add(R.drawable.p6);
             add(R.drawable.p7);
             add(R.drawable.p8);
+        }
+    };
+
+    public ArrayList<Integer> msounds = new ArrayList<Integer>() {
+        {
+            add(R.raw.dzwiek1);
+            add(R.raw.dzwiek2);
+            add(R.raw.dzwiek3);
+            add(R.raw.dzwiek4);
+            add(R.raw.dzwiek5);
+            add(R.raw.dzwiek6);
+            add(R.raw.dzwiek7);
         }
     };
 
@@ -81,13 +79,27 @@ public class PaintingActivity extends AppCompatActivity {
         mbuttonBack = (Button) findViewById(R.id.button_back);
         mimageViewPainting = (ImageView) findViewById(R.id.imageView_painting);
 
-        resources = getResources();
         mhandler = new Handler();
 
         scanLeDevice(this);
 
         mbuttonBack.setOnClickListener(v -> {
-            mcommon.goToMainActivity(this);
+            final Context context = this;
+            new Thread() {
+                public void run() {
+                        try {
+                            runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    mcommon.goToMainActivity(context);
+                                }
+                            });
+                            Thread.sleep(300);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                }
+            }.start();
         });
     }
 
@@ -134,7 +146,7 @@ public class PaintingActivity extends AppCompatActivity {
     Runnable mStatusChecker = new Runnable() {
         @Override
         public void run() {
-            for (BluetoothGatt inode : mbluetoothConnection.mbluetoothGattDevices) {
+                for (BluetoothGatt inode : mbluetoothConnection.mbluetoothGattDevices) {
                 if (inode.readRemoteRssi() == false)
                 {
                     Log.d("RUNNABLE", "ReadRemoteRssi() returns false");
@@ -147,15 +159,75 @@ public class PaintingActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        stopPlayer();
 //        mbluetoothAdapter.cancelDiscovery();
     }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        stopPlayer();
+    }
+
+    public void playSound(int index, int maxRSSI) {
+        if (mmediaPlayer == null ) {
+            mmediaPlayer = MediaPlayer.create(this, msounds.get(index));
+            mmediaPlayer.setLooping(true);
+            adjustSoundVolume(maxRSSI);
+            mmediaPlayer.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+                @Override
+                public void onCompletion(MediaPlayer mediaPlayer) {
+                    stopPlayer();
+                }
+            });
+        }
+        mmediaPlayer.start();
+    }
+
+    public void adjustSoundVolume(int maxRSSI) {
+        if (mmediaPlayer != null) {
+            int maxRSSIWithBias = Math.abs(maxRSSI) - 20;
+            int volume = maxRSSIWithBias > mMAX_VOLUME ? mMAX_VOLUME : Math.max(maxRSSIWithBias, 0);
+
+            if (volume > 40) {
+                volume += 5;
+            } else if (volume <= 40 && volume > 30) {
+                volume -= 5;
+            } else {
+                volume -= 10;
+            }
+
+//            float log1=(float)(Math.log(mMAX_VOLUME - volume)/Math.log(mMAX_VOLUME));
+            float log1 = (float)(mMAX_VOLUME - volume) / mMAX_VOLUME;
+            mmediaPlayer.setVolume(log1,log1);
+        }
+    }
+
+    public void pauseSound() {
+        if (mmediaPlayer != null) {
+            mmediaPlayer.pause();
+        }
+    }
+
+    public void stopSound() {
+        stopPlayer();
+    }
+
+    public void stopPlayer() {
+        if (mmediaPlayer != null) {
+            mmediaPlayer.release();
+            mmediaPlayer = null;
+        }
+    }
+
+
 
     @RequiresApi(api = Build.VERSION_CODES.M)
     public void setPainting() {
         if (mbluetoothConnection.mRSSI == null) return;
 
         int maxRSSI = 0;
-        int maxRSSIIndex = -1;
+        int maxRSSIIndex = 0;
         for(int i = 0; i < mbluetoothConnection.mRSSI.length; i++) {
             int RSSI = mbluetoothConnection.mRSSI[i];
             if(RSSI != 0) {
@@ -170,10 +242,19 @@ public class PaintingActivity extends AppCompatActivity {
                 }
             }
         }
+
         if (maxRSSI != 0) {
-            mimageViewPainting.setImageResource(mpaintings.get(maxRSSIIndex));
-            Log.d("setImageView", String.valueOf(maxRSSIIndex));
-//            SystemClock.sleep(1000);
+            if (currentIndex != maxRSSIIndex) {
+                currentIndex = maxRSSIIndex;
+                stopSound();
+                if (maxRSSIIndex != mINDEX_SILENCE_SOUND) {
+                    playSound(maxRSSIIndex, maxRSSI);
+                }
+                Log.d("MAXSSIINDEX: ", String.valueOf(maxRSSIIndex));
+                mimageViewPainting.setImageResource(mpaintings.get(maxRSSIIndex));
+            } else {
+                adjustSoundVolume(maxRSSI);
+            }
         }
     }
 
