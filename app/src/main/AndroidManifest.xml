@@ -23,6 +23,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Tesknotam">
+        <activity android:name=".LoadingActivity"></activity>
         <activity android:name=".InfoActivity" />
         <activity android:name=".PaintingActivity" />
         <activity android:name=".MainActivity">

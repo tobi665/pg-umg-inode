@@ -85,6 +85,32 @@ public class BluetoothConnection {
         mbluetoothLeScanner = mbluetoothAdapter.getBluetoothLeScanner();
     }
 
+    // Create a BroadcastReceiver for ACTION_FOUND
+    public final BroadcastReceiver mBroadcastReceiver1 = new BroadcastReceiver() {
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            // When discovery finds a device
+            if (action.equals(mbluetoothAdapter.ACTION_STATE_CHANGED)) {
+                final int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, mbluetoothAdapter.ERROR);
+
+                switch(state){
+                        case BluetoothAdapter.STATE_OFF:
+//                        Log.d(TAG, "onReceive: STATE OFF");
+                            break;
+                        case BluetoothAdapter.STATE_TURNING_OFF:
+//                        Log.d(TAG, "mBroadcastReceiver1: STATE TURNING OFF");
+                            break;
+                        case BluetoothAdapter.STATE_ON:
+//                        Log.d(TAG, "mBroadcastReceiver1: STATE ON");
+                            break;
+                        case BluetoothAdapter.STATE_TURNING_ON:
+//                        Log.d(TAG, "mBroadcastReceiver1: STATE TURNING ON");
+                            break;
+                    }
+                }
+            }
+        };
+
     public void checkIfBluetoothEnabled(Context context) {
         if(mbluetoothAdapter == null){
             msg(context,"Urządzenie nie wspiera technologii Bluetooth.");
@@ -93,6 +119,9 @@ public class BluetoothConnection {
         if(!mbluetoothAdapter.isEnabled()) {
             Intent enableBluetoothIntent = new  Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
             context.startActivity(enableBluetoothIntent);
+
+            IntentFilter bluetoothIntent = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
+            context.registerReceiver(mBroadcastReceiver1, bluetoothIntent);
         }
     }
 

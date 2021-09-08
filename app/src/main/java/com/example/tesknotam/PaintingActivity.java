@@ -20,6 +20,7 @@ import android.widget.ImageView;
 
 import java.util.ArrayList;
 import android.os.Handler;
+import android.widget.TextView;
 
 @RequiresApi(api = Build.VERSION_CODES.M)
 public class PaintingActivity extends AppCompatActivity {
@@ -35,10 +36,12 @@ public class PaintingActivity extends AppCompatActivity {
     boolean mstartedRepeatingTask = false;
     Button mbuttonBack;
     ImageView mimageViewPainting;
+    TextView mtextViewImageCaption;
     MediaPlayer mmediaPlayer;
     BluetoothConnection mbluetoothConnection;
     Common mcommon = new Common();
     Handler mhandler;
+    Handler mRSSIRunnableHandler;
     int currentIndex = -1;
 
 
@@ -46,7 +49,7 @@ public class PaintingActivity extends AppCompatActivity {
         {
             add(R.drawable.p1);
             add(R.drawable.p2);
-//            add(R.drawable.p3);
+            add(R.drawable.p3);
             add(R.drawable.p4);
             add(R.drawable.p5);
             add(R.drawable.p6);
@@ -67,6 +70,18 @@ public class PaintingActivity extends AppCompatActivity {
         }
     };
 
+    public ArrayList<String> mpaintingCaptions = new ArrayList<String>() {
+        {
+            add("obraz 1");
+            add("obraz 2");
+            add("obraz 3");
+            add("obraz 4");
+            add("obraz 5");
+            add("obraz 6");
+            add("obraz 7");
+        }
+    };
+
     @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -78,28 +93,18 @@ public class PaintingActivity extends AppCompatActivity {
 
         mbuttonBack = (Button) findViewById(R.id.button_back);
         mimageViewPainting = (ImageView) findViewById(R.id.imageView_painting);
+        mtextViewImageCaption = (TextView) findViewById(R.id.textView_imageCaption);
 
         mhandler = new Handler();
+
+        mRSSIRunnableHandler = new Handler();
 
         scanLeDevice(this);
 
         mbuttonBack.setOnClickListener(v -> {
             final Context context = this;
-            new Thread() {
-                public void run() {
-                        try {
-                            runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-                                    mcommon.goToMainActivity(context);
-                                }
-                            });
-                            Thread.sleep(300);
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        }
-                }
-            }.start();
+            stopPlayer();
+            mcommon.goToMainActivity(context);
         });
     }
 
@@ -127,31 +132,43 @@ public class PaintingActivity extends AppCompatActivity {
         mbluetoothConnection.mbluetoothLeScanner.startScan(mbluetoothConnection.mLeScanCallback);
     }
 
+    Runnable mRSSIRunnable = new Runnable() {
+        @Override
+        public void run() {
+//            while (true) {
+                try {
+                    SystemClock.sleep(TIME_BETWEEN_READINGS_UPDATES);
+                    Thread get_inode_rssi = new Thread(mStatusChecker);
+                    get_inode_rssi.start();
+                    try {
+                        get_inode_rssi.join();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    setPainting();
+                } finally {
+                    // 100% guarantee that this always happens, even if
+                    // your update method throws an exception
+                    mhandler.postDelayed(mRSSIRunnable, 100);
+                }
+            }
+//        }
+    };
+
     void startRepeatingTask() {
         mstartedRepeatingTask = true;
-        while(true) //TODO: create a flag to stop a thread
-        {
-            SystemClock.sleep(TIME_BETWEEN_READINGS_UPDATES);
-            Thread get_inode_rssi = new Thread(mStatusChecker);
-            get_inode_rssi.start();
-            try {
-                get_inode_rssi.join();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            setPainting();
-        }
+        mRSSIRunnable.run();
     }
 
     Runnable mStatusChecker = new Runnable() {
         @Override
         public void run() {
                 for (BluetoothGatt inode : mbluetoothConnection.mbluetoothGattDevices) {
-                if (inode.readRemoteRssi() == false)
-                {
-                    Log.d("RUNNABLE", "ReadRemoteRssi() returns false");
-                }
-                SystemClock.sleep(HARDWARE_TIME_BETWEEN_READINGS);
+                    if (inode.readRemoteRssi() == false)
+                    {
+                        Log.d("RUNNABLE", "ReadRemoteRssi() returns false");
+                    }
+                    SystemClock.sleep(HARDWARE_TIME_BETWEEN_READINGS);
             }
         }
     };
@@ -160,6 +177,7 @@ public class PaintingActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         stopPlayer();
+        unregisterReceiver(mbluetoothConnection.mBroadcastReceiver1);
 //        mbluetoothAdapter.cancelDiscovery();
     }
 
@@ -220,8 +238,6 @@ public class PaintingActivity extends AppCompatActivity {
         }
     }
 
-
-
     @RequiresApi(api = Build.VERSION_CODES.M)
     public void setPainting() {
         if (mbluetoothConnection.mRSSI == null) return;
@@ -252,6 +268,7 @@ public class PaintingActivity extends AppCompatActivity {
                 }
                 Log.d("MAXSSIINDEX: ", String.valueOf(maxRSSIIndex));
                 mimageViewPainting.setImageResource(mpaintings.get(maxRSSIIndex));
+                mtextViewImageCaption.setText(mpaintingCaptions.get(maxRSSIIndex));
             } else {
                 adjustSoundVolume(maxRSSI);
             }
