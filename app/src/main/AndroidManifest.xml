@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <permission
         android:name="android.permission.BLUETOOTH"
@@ -22,8 +23,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Tesknotam">
-        <activity android:name=".BluetoothConnectionActivity"></activity>
-        <activity android:name=".DeviceListAdapter" />
+        <activity android:name=".LoadingActivity"></activity>
         <activity android:name=".InfoActivity" />
         <activity android:name=".PaintingActivity" />
         <activity android:name=".MainActivity">

@@ -23,8 +23,7 @@
         app:layout_constraintBottom_toTopOf="@+id/textView_imageCaption"
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintRight_toRightOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/button_back"
-        app:srcCompat="@drawable/p1" />
+        app:layout_constraintTop_toBottomOf="@+id/button_back" />
 
     <TextView
         android:id="@+id/textView_imageCaption"
